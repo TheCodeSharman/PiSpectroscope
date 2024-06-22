@@ -2,13 +2,13 @@
 // Configuration
 light_distance_mm = 50; // distance from slit to diffraction grating
 diffraction_grating_angle = 30; // angle of light to diffraction grating
-diffraction_grating_mm = [ 15, 15, 1 ]; // [width, height, depth] of diffratcion grating
+diffraction_grating_mm = [ 13, 13, 1 ]; // [width, height, depth] of diffratcion grating
 slit_mm = [10,0.2]; // the [width,height] of the slit
-lense_mm = [ 30, 12 ]; // [ height, diameter ] of lense
-camera_board_mm = [ 45, 45, 4 ]; // [ width, height, depth ] of camera board
+lense_mm = [ 24.31, 14 ]; // [ height, diameter ] of lense
+camera_board_mm = [ 36, 36, 1.6 ]; // [ width, height, depth ] of camera board
 camera_board_clearance = 2; // clearance to allow cabling etc.
-camera_cable_mm = [ 30, 100, 1 ]; // [ width,length, depth ] of cable to raspberry pi
-screw_size_mm=4;
+camera_cable_mm = [ 16, 100, 0.2 ]; // [ width,length, depth ] of cable to raspberry pi
+screw_size_mm=2.5; // M3 scews
 
 // Other constants
 fillet_radius = 0.5; // radius used for rounded courners
@@ -18,11 +18,15 @@ clearance = 0.4; // clearance added to make parts fit
 assemble = false; // set to false for eport to STL
 explode_lid = 50; // offset vertically to explode the lid
 
+$fa=1;
+$fs=0.2;
+
 // Dependent parameters
 camera_plus_board = camera_board_mm[2] + lense_mm[0];
 case_fillet = fillet_radius*10;
 enclosure_mm = [camera_board_mm[0]-case_fillet*+clearance*2+camera_board_clearance*2, light_distance_mm+camera_plus_board, camera_board_mm[1]*1.2+2*(wall_thickness+clearance)];
-
+holder_mm = [camera_board_mm[1]*cos(diffraction_grating_angle), camera_board_mm[1]*sin(diffraction_grating_angle), screw_size_mm*2];
+ 
 // adds a value to each member of an array
 function array_add(arr, value) = [for (elem = arr) elem + value];
 
@@ -51,7 +55,9 @@ module drill_corner_holes(size,d,offset=0,center=false) {
             children();
         }
         place_in_corners(size,offset,center) {
-            cylinder(h=size[2],d=d);
+            rotate(size[2] > 0?[0,0,0]:[180,0,0])
+                translate([0,0,-1])
+                cylinder(h=abs(size[2]),d=d);
         }
     }
 }
@@ -127,7 +133,8 @@ module camera_with_grating() {
 
 // The 3d extrusion shape used to create the 3d enclosure
 module enclose_base(fillet) {
-    offset(fillet) square([enclosure_mm[0],enclosure_mm[1]], center=true);
+    offset(fillet) 
+    square([enclosure_mm[0],enclosure_mm[1]], center=true);
 }
 
 module enclosure_lid() {
@@ -155,26 +162,30 @@ module enclosure_construction_bottom(fillet) {
 }
 
 module enclosure_bottom() {
-    difference() {
-        translate([0,enclosure_mm[1]/2,enclosure_mm[2]/2+wall_thickness])
-        drill_corner_holes(enclosure_mm,screw_size_mm,center=true) {
-            translate([0,0,-wall_thickness])
-            union() {
-                translate([0,0,-enclosure_mm[2]/2]) 
-                    difference() {
-                        enclosure_construction_bottom(case_fillet);
-                        translate([0,0,wall_thickness])
-                        enclosure_construction_bottom(case_fillet-wall_thickness);
+    union() {
+        difference() {
+            translate([0,enclosure_mm[1]/2,enclosure_mm[2]/2+wall_thickness])
+            drill_corner_holes(enclosure_mm,screw_size_mm,center=true) {
+                translate([0,0,-wall_thickness])
+                union() {
+                    translate([0,0,-enclosure_mm[2]/2]) 
+                        difference() {
+                            enclosure_construction_bottom(case_fillet);
+                            translate([0,0,wall_thickness])
+                            enclosure_construction_bottom(case_fillet-wall_thickness);
+                        }
+                    place_in_corners(enclosure_mm,center=true) {
+                        color("purple",0.5)
+                        cylinder(h=enclosure_mm[2]-wall_thickness-clearance,d=screw_size_mm+wall_thickness);
                     }
-                place_in_corners(enclosure_mm,center=true) {
-                    color("purple",0.5)
-                    cylinder(h=enclosure_mm[2]-wall_thickness-clearance,d=screw_size_mm+wall_thickness);
                 }
             }
+            translate([0,-camera_cable_mm[1]/2+camera_board_mm[1],wall_thickness+clearance*2])
+            camera_cable();
+            light_beam();
         }
-        translate([0,-camera_cable_mm[1]/2+camera_board_mm[1],wall_thickness+clearance*2])
-        camera_cable();
-        light_beam();
+        translate([0,holder_mm[1]/2+case_fillet+camera_board_clearance + screw_size_mm+wall_thickness,wall_thickness+clearance*2+camera_cable_mm[2]])
+            board_holder();
     }
 }
 
@@ -191,12 +202,35 @@ module light_beam() {
             cube([slit_mm[0],light_distance_mm,slit_mm[1]],center=true);
 }
 
+module board_holder_strut(holder_mm) {
+    translate([0,holder_mm[2],-fillet_radius])
+    rotate([90,0,0])
+    linear_extrude(holder_mm[2])
+        offset(fillet_radius*2) offset(-fillet_radius)
+            polygon([ [0,0], [holder_mm[0],holder_mm[1]], [holder_mm[0],0] ]);
+}
+
+module board_holder() {
+    translate([-camera_board_mm[0]/2,holder_mm[0]/2,fillet_radius*2])
+        rotate([0,0,-90])
+            translate([camera_board_mm[2],0,-camera_board_mm[2]])
+            rotate([0,-diffraction_grating_angle,0])
+                drill_corner_holes([camera_board_mm[0],camera_board_mm[1],-holder_mm[1]],d=screw_size_mm,offset=-screw_size_mm) {
+                    rotate([0,diffraction_grating_angle,0]) {
+                        board_holder_strut(holder_mm);
+                        translate([0,camera_board_mm[0]-holder_mm[2],0])
+                            board_holder_strut(holder_mm);
+                    }
+                }
+}
+
 if ( assemble ) {
     // we're assuming the light is coming from the positive y direction
     translate([0,camera_plus_board*cos(diffraction_grating_angle)+case_fillet+camera_board_clearance + screw_size_mm+wall_thickness,wall_thickness+clearance*2+camera_cable_mm[2]])
         rotate([-diffraction_grating_angle,0,0])
             translate([0,-camera_board_mm[1]/2,camera_plus_board])
                 camera_with_grating();
+   
     translate([0,-camera_cable_mm[1]/2+camera_board_mm[1],wall_thickness+clearance*2])
         camera_cable();
 
